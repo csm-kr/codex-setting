@@ -1,0 +1,18 @@
+{
+  "description": "Rename new Codex sessions from the first user task in this project only.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoLogo -NoProfile -NonInteractive -File \".codex/hooks/auto_rename_session.ps1\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \".codex\\hooks\\auto_rename_session.ps1\"",
+            "timeout": 60,
+            "statusMessage": "첫 작업으로 세션 이름 정리 중"
+          }
+        ]
+      }
+    ]
+  }
+}
