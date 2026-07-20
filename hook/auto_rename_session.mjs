@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 const USER_PROMPT_EVENT = 'UserPromptSubmit';
 const STOP_EVENT = 'Stop';
@@ -12,6 +13,8 @@ const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const APP_SERVER_TIMEOUT_MS = 20_000;
 const TITLE_TIMEOUT_MS = 45_000;
 const TITLE_MODEL = process.env.CODEX_THREAD_TITLE_MODEL?.trim() || 'gpt-5.4-mini';
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const POST_SUBMIT_DELAYS_MS = [1_200, 3_000];
 
 let resolvedCodexCommand;
 
@@ -189,6 +192,19 @@ async function spawnCodex(argumentsList, options = {}) {
   });
 }
 
+function spawnPostSubmitFinalizer(sessionId) {
+  const child = spawn(process.execPath, [SCRIPT_PATH, '--finalize', sessionId], {
+    detached: true,
+    env: { ...process.env, NO_COLOR: '1' },
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.on('error', () => {
+    // Stop remains a fallback if the detached finalizer cannot start.
+  });
+  child.unref();
+}
+
 class AppServerClient {
   constructor(child) {
     this.child = child;
@@ -295,7 +311,7 @@ async function openAppServer() {
       clientInfo: {
         name: 'cross_platform_session_auto_rename_hook',
         title: 'Cross-platform Session Auto Rename Hook',
-        version: '2.1.0',
+        version: '2.2.0',
       },
       capabilities: { experimentalApi: true },
     });
@@ -537,6 +553,7 @@ async function handleUserPrompt(hookInput, sessionId, paths) {
   if (pending?.title) {
     try {
       await setThreadTitleWithRetry(sessionId, pending.title, 2);
+      spawnPostSubmitFinalizer(sessionId);
     } catch (error) {
       await logFailure(USER_PROMPT_EVENT, sessionId, error);
     }
@@ -591,6 +608,29 @@ async function handleUserPrompt(hookInput, sessionId, paths) {
       await client.close();
     }
   }
+  spawnPostSubmitFinalizer(sessionId);
+}
+
+async function handlePostSubmitFinalizer(sessionId) {
+  const paths = statePaths(sessionId);
+
+  for (const waitMilliseconds of POST_SUBMIT_DELAYS_MS) {
+    await delay(waitMilliseconds);
+    if (await fileExists(paths.done)) {
+      return;
+    }
+
+    const pending = await readJsonFile(paths.pending);
+    if (!pending?.title) {
+      return;
+    }
+
+    try {
+      await setThreadTitleWithRetry(sessionId, pending.title, 2);
+    } catch (error) {
+      await logFailure('PostSubmitFinalize', sessionId, error);
+    }
+  }
 }
 
 async function handleStop(hookInput, sessionId, paths) {
@@ -623,6 +663,14 @@ async function handleStop(hookInput, sessionId, paths) {
 }
 
 async function main() {
+  if (process.argv[2] === '--finalize') {
+    const sessionId = normalizeSessionId(process.argv[3]);
+    if (sessionId) {
+      await handlePostSubmitFinalizer(sessionId);
+    }
+    return;
+  }
+
   const rawInput = await readStandardInput();
   if (!rawInput.trim()) {
     return;
