@@ -1,31 +1,25 @@
 # codex-setting
 
-첫 사용자 명령의 **의도**를 짧게 요약하고 Codex 스레드 제목으로 자동 설정하는 프로젝트 로컬 훅입니다.
+첫 사용자 요청의 의도를 짧게 요약하고 Codex CLI 입력창에 다음 텍스트만 넣는
+프로젝트 로컬 훅입니다.
 
-Windows, macOS, Ubuntu에서 같은 Node.js 소스를 사용합니다. 전역 `~/.codex` 설정은 건드리지 않으며, 설치 대상으로 지정한 프로젝트의 `.codex` 폴더만 변경합니다.
+```text
+/rename "요약된 세션 제목"
+```
 
-## 동작 방식
+Enter는 자동으로 누르지 않습니다. 사용자가 내용을 확인한 뒤 직접 Enter를 눌러
+세션 제목을 확정합니다.
 
-1. 새 스레드의 첫 명령이 들어오면 `UserPromptSubmit` 훅이 실제 의도를 파악해 같은 언어의 2~6단어 제목을 만듭니다.
-2. Codex의 `thread/name/set` API로 해당 스레드 제목을 설정합니다.
-3. 훅 반환 직후 백그라운드 finalizer가 같은 제목을 재적용합니다. Codex 기본 제목 생성이 원문으로 덮어쓰는 경쟁 조건을 막고, 첫 응답이 진행 중일 때도 사이드바 제목을 바꿉니다.
-4. 첫 응답이 끝나는 `Stop` 시점에도 마지막으로 확인하여 누락된 제목을 복구합니다.
-5. 이후 명령에서는 실행하지 않으며, 이미 사용자가 직접 이름을 정한 스레드도 덮어쓰지 않습니다.
+## 동작
 
-제목 생성용 실행은 임시 세션(`--ephemeral`)이고 훅을 비활성화하므로 재귀 실행되지 않습니다. 제목 생성이 실패해도 사용자 작업은 막지 않으며, 원문이나 코드 조각 대신 안전한 일반 제목을 사용합니다.
+1. `UserPromptSubmit`에서 첫 번째 구체적인 사용자 요청을 읽습니다.
+2. 별도의 임시 Codex 실행으로 2~6단어 제목을 생성합니다.
+3. 현재 Codex CLI 입력창에 `/rename "제목"`을 삽입합니다.
+4. 사용자가 직접 Enter를 누릅니다.
 
-## 요구 사항
-
-- Windows 10/11, macOS 또는 Ubuntu
-- Node.js 18 이상
-- 로그인된 Codex CLI
-- 기본 제목 모델인 `gpt-5.4-mini` 사용 권한
-
-다른 모델을 쓰려면 Codex를 시작하기 전에 `CODEX_THREAD_TITLE_MODEL` 환경 변수로 지정할 수 있습니다.
+App Server, SQLite 직접 수정, 자동 Enter, Desktop App 연동은 사용하지 않습니다.
 
 ## 설치
-
-저장소를 받은 뒤 어느 운영체제에서나 같은 명령을 사용합니다.
 
 ```bash
 git clone https://github.com/csm-kr/codex-setting.git
@@ -36,36 +30,39 @@ node install.mjs install "/absolute/path/to/project"
 Windows PowerShell 예시:
 
 ```powershell
-git clone https://github.com/csm-kr/codex-setting.git
-Set-Location codex-setting
-node .\install.mjs install "C:\work\my-project"
+node .\install.mjs install "C:\path\to\project"
 ```
 
-설치기는 기존 `.codex/hooks.json`의 다른 훅을 그대로 보존하고, 이 저장소가 관리하는 두 훅만 추가하거나 갱신합니다. 설치 후 대상 프로젝트를 Codex에서 열고 `/hooks`를 실행해 새 훅을 승인한 다음 새 세션을 시작하세요. 훅 내용이 바뀌면 보안 해시도 바뀌므로 `/hooks`에서 다시 승인해야 합니다.
+설치 후 새 Codex CLI 세션에서 `/hooks`를 열어 이 프로젝트 훅을 승인합니다.
 
-## 관리 명령
+## 관리
 
 ```bash
-# 설치 또는 최신 버전으로 갱신
 node install.mjs update "/absolute/path/to/project"
-
-# 파일과 두 이벤트 등록 상태 확인
 node install.mjs status "/absolute/path/to/project"
-
-# 이 저장소가 관리하는 훅만 제거
 node install.mjs uninstall "/absolute/path/to/project"
-
-# 소스 문법 검사
-npm run check
 ```
 
-동작 중 상태와 오류 로그는 프로젝트가 아니라 운영체제 임시 폴더의 `codex-session-auto-rename-v2` 아래에 저장됩니다. 7일이 지난 상태 파일은 자동 정리됩니다.
+## 플랫폼
 
-## 설치되는 파일
+- Windows: 콘솔 입력 큐에 텍스트만 삽입합니다.
+- macOS: `/dev/tty` 입력을 먼저 시도하고, 차단되면 기본 제공 AppleScript로
+  현재 터미널에 텍스트를 붙여넣습니다. 최초 실행 시 터미널의 손쉬운 사용 권한을
+  허용해야 할 수 있습니다.
+- Ubuntu: `/dev/tty` 입력을 먼저 시도하고, 차단되면 Wayland의 `wtype`, X11의
+  `xdotool` 순서로 시도합니다. 해당 환경에서는 둘 중 맞는 도구 하나가 필요합니다.
 
-```text
-<project>/.codex/hooks.json
-<project>/.codex/hooks/auto_rename_session.mjs
+삽입 실패는 운영체제 임시 폴더의
+`codex-rename-prompt-hook-v1/errors.log`에 기록됩니다.
+
+Node.js 18 이상, 로그인된 Codex CLI가 필요합니다. macOS·Ubuntu 설치에는 C
+컴파일러(`cc`), Windows 설치에는 기본 .NET Framework C# 컴파일러가 필요합니다.
+
+## 수동 검사
+
+```bash
+node .codex/hooks/rename_prompt_hook.mjs --suggest "사용자 요청"
+node .codex/hooks/rename_prompt_hook.mjs --insert "테스트 제목"
 ```
 
-저장소의 `hook/auto_rename_session.mjs`가 단일 원본입니다. 각 프로젝트에는 `install.mjs`가 이 원본을 복사하고, 해당 컴퓨터에 맞는 절대 경로를 `hooks.json`에 기록합니다.
+`--insert`도 Enter를 보내지 않습니다.

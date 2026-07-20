@@ -1,11 +1,11 @@
 {
   "name": "codex-setting",
-  "version": "2.2.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
-  "description": "Cross-platform, project-local Codex thread auto-rename hook",
+  "description": "Project-local Codex CLI /rename suggestion hook",
   "scripts": {
-    "check": "node --check hook/auto_rename_session.mjs && node --check install.mjs"
+    "check": "node --check hook/rename_prompt_hook.mjs && node --check install.mjs"
   },
   "engines": {
     "node": ">=18"
